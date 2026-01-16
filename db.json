@@ -1,9 +1,9 @@
 {
     "doug@example.com": {
-        "name": "doug",
+        "name": "aidan",
         "email": "doug@example.com",
         "password": "password123",
-        "street_address": "123 Main St",
+        "street_address": "I dunno",
         "games": {
             "idk": {
                 "name": "idk",

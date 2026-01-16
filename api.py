@@ -69,7 +69,7 @@ def login(user: Dict[str, str]) -> Dict[str, str]:
         detail: str = str(e)
         raise HTTPException(status_code=401, detail=detail)
 
-@app.get("/api/debug/self")
+@app.get("/api/self")
 def get_self(authed_user: User = Depends(auth_middleware)) -> Dict[str, str | dict]:
 
     return {
