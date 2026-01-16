@@ -4,7 +4,8 @@ from users import Users
 from user import User, Game
 from user_auth import UserAuth
 
-from fastapi import FastAPI, Depends, HTTPException, Response
+from fastapi.responses import JSONResponse
+from fastapi import FastAPI, Depends, HTTPException
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 app = FastAPI()
@@ -36,8 +37,8 @@ def auth_middleware(
             detail="Failed to auth user! Invalid JWT!"
         )
 
-
 # === User API === #
+# NOTE: Could have a table/list of endpoints to not hardcode API endpoints
 
 @app.post("/api/register")
 def register(reg_body: Dict[str, str]) -> Dict[str, bool]:
@@ -57,7 +58,14 @@ def register(reg_body: Dict[str, str]) -> Dict[str, bool]:
 
     users.add_user(user)
 
-    return Response(status_code=201)
+    return JSONResponse(
+        content={
+            "links": {
+                "next" : "/api/login",
+            }
+        },
+        status_code=201
+    )
 
 @app.post("/api/login")
 def login(user: Dict[str, str]) -> Dict[str, str]:
@@ -78,6 +86,12 @@ def get_self(authed_user: User = Depends(auth_middleware)) -> Dict[str, str | di
         "games" : {
             name: game.to_dict()
             for name, game in authed_user.games.items()
+        },
+        "links" : {
+            "update_self" : { 
+                "endpoint": "/api/self",
+                "method"  : "PUT"
+             }
         }
     }
 
@@ -96,7 +110,17 @@ def update_self(
     except Exception:
         raise HTTPException(status_code=404, detail="Failed to find game!")
 
-    return Response(status_code=204)
+    return JSONResponse(
+        content={
+            "links" : {
+                "read_self" : {
+                    "endpoint" : "/api/self",
+                    "method"   : "GET"
+                }
+            }  
+        },
+        status_code=200
+    )
 
 # === Game API === #
 
@@ -119,18 +143,42 @@ def add_game(
     except Exception as e:
         raise HTTPException(status_code=404, detail=str(e))
 
-    return Response(status_code=201)
+    return JSONResponse(
+        content={
+            "links" : {
+                "get_game" : {
+                    "endpoint" : "/api/games/{game_name}",
+                    "method"   : "GET"
+                }
+            }
+        },
+        status_code=201
+    )
 
 @app.get("/api/games/{game_name}")
 def get_game(
     game_name: str,
     authed_user: User = Depends(auth_middleware)
-) -> Dict[str, str | int]:
+) -> Dict[str, str | dict]:
     game: Game | None = authed_user.get_game(game_name)
     if not game:
         raise HTTPException(status_code=404, detail="Failed to find game!")
 
-    return game.to_dict()
+    game_json: Dict[str, str | dict] = game.to_dict()
+    game_json.update({
+        "links" : {
+            "add_game" : {
+                "endpoint" : "/api/games/",
+                "method" : "POST"
+            },
+            "delete_game" : {
+                "endpoint" : "/api/games/{game_name}",
+                "method" : "DELETE"
+            }
+        }                      
+    })
+
+    return game_json
 
 @app.put("/api/games/{game_name}")
 def update_game(
@@ -149,7 +197,17 @@ def update_game(
     except Exception as e:
         raise HTTPException(status_code=404, detail=str(e))
 
-    return Response(status_code=204)
+    return JSONResponse(
+        content={
+            "links" : {
+                "get_game" : {
+                    "endpoint" : "/api/games/{game_name}",
+                    "method" : "GET"
+                }
+            }
+        },
+        status_code=200
+    )
 
 @app.delete("/api/games/{game_name}")
 def delete_game(
@@ -162,5 +220,15 @@ def delete_game(
     except Exception as e:
         raise HTTPException(status_code=404, detail=str(e))
 
-    return Response(status_code=204)
-    
+    return JSONResponse(
+        content={
+            "links" : {
+                "get_game" : {
+                    "endpoint" : "/api/games/{game_name}",
+                    "method" : "GET"
+                }
+            }
+        },
+        status_code=200
+    )
+

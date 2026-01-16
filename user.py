@@ -16,11 +16,11 @@ class Game:
         self.condition: str = condition
 
 
-    def to_dict(self) -> Dict[str, str | int]:
+    def to_dict(self) -> Dict[str, str | dict]:
         return {
             "name"      : self.name,
             "publisher" : self.publisher,
-            "year"      : self.year,
+            "year"      : str(self.year),
             "platform"  : self.platform,
             "condition" : self.condition
         }

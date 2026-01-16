@@ -8,9 +8,16 @@
             "idk": {
                 "name": "idk",
                 "publisher": "bungie",
-                "year": 2018,
+                "year": "2018",
                 "platform": "PC, PS4, Xbox One",
                 "condition": "dawg shiet"
+            },
+            "destiny 2": {
+                "name": "destiny 2",
+                "publisher": "bungie",
+                "year": "2018",
+                "platform": "PC, PS4, Xbox One",
+                "condition": "mint"
             }
         }
     }
