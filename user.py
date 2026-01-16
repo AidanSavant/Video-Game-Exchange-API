@@ -15,16 +15,6 @@ class Game:
         self.platform: str  = platform
         self.condition: str = condition
 
-    def update_info(
-        self,
-        name: str | None,
-        condition: str | None
-    ) -> None:
-        if name:
-            self.name = name
-
-        if condition:
-            self.condition = condition
 
     def to_dict(self) -> Dict[str, str | int]:
         return {
@@ -90,7 +80,17 @@ class User:
         if not game:
             return
 
-        game.update_info(new_name, condition)
+        if new_name and new_name != name:
+            if self.has_game(new_name):
+                raise ValueError("Game with new name already exists!")
+
+            del self.games[name]
+
+            game.name = new_name
+            self.games[new_name] = game
+
+        if condition:
+            game.condition = condition
 
     def delete_game(self, name: str) -> None:
         if self.has_game(name):
