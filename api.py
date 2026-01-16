@@ -4,7 +4,7 @@ from users import Users
 from user import User, Game
 from user_auth import UserAuth
 
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, Response
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 app = FastAPI()
@@ -24,7 +24,7 @@ def auth_middleware(
         user: User | None = auth_service.users.get_user(jwt_payload["sub"])
         if not user:
             raise HTTPException(
-                status_code=401,
+                status_code=409,
                 detail="Failed to auth user! User does not exist!"
             )
 
@@ -57,7 +57,7 @@ def register(reg_body: Dict[str, str]) -> Dict[str, bool]:
 
     users.add_user(user)
 
-    return { "successful" : True }
+    return Response(status_code=201)
 
 @app.post("/api/login")
 def login(user: Dict[str, str]) -> Dict[str, str]:
@@ -71,7 +71,6 @@ def login(user: Dict[str, str]) -> Dict[str, str]:
 
 @app.get("/api/self")
 def get_self(authed_user: User = Depends(auth_middleware)) -> Dict[str, str | dict]:
-
     return {
         "name": authed_user.name,
         "email": authed_user.email,
@@ -87,13 +86,17 @@ def update_self(
     update_body: Dict[str, str], 
     user: User = Depends(auth_middleware)
 ) -> Dict[str, bool]:
-    users.update_user(
-        email=user.email,
-        name=update_body.get("name"),
-        street_address=update_body.get("street_address")
-    )
+    try:
+        users.update_user(
+            email=user.email,
+            name=update_body.get("name"),
+            street_address=update_body.get("street_address")
+        )
+    
+    except Exception:
+        raise HTTPException(status_code=404, detail="Failed to find game!")
 
-    return { "successful" : True }
+    return Response(status_code=204)
 
 # === Game API === #
 
@@ -116,7 +119,7 @@ def add_game(
     except Exception as e:
         raise HTTPException(status_code=404, detail=str(e))
 
-    return { "successful" : True }
+    return Response(status_code=201)
 
 @app.get("/api/games/{game_name}")
 def get_game(
@@ -146,7 +149,7 @@ def update_game(
     except Exception as e:
         raise HTTPException(status_code=404, detail=str(e))
 
-    return { "successful" : True }
+    return Response(status_code=204)
 
 @app.delete("/api/games/{game_name}")
 def delete_game(
@@ -159,4 +162,5 @@ def delete_game(
     except Exception as e:
         raise HTTPException(status_code=404, detail=str(e))
 
-    return { "successful" : True }
+    return Response(status_code=204)
+    
