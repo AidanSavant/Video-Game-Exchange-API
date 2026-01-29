@@ -2,6 +2,6 @@
 A distributed RMM3-level API for managing your account and games, along with the ability to exchange with other users. This multi-node system leverages nginx as a reverse proxy/load balancer. 
 
 # Important
-* There is no consistency between each replica's "database"
+* There is no consistency between each replica's "database" (server 1 isn't going to have server 2's database after building)
 * and probably some other stuff
 * probably bad code
