@@ -1,0 +1,16 @@
+services:
+  api1:
+    build: .
+    container_name: api1
+
+  api2:
+    build: .
+    container_name: api2
+
+  nginx:
+    build: ./nginx
+    ports:
+      - "8000:80"
+    depends_on:
+      - api1
+      - api2

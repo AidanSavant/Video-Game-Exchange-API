@@ -1,0 +1,46 @@
+{
+    "doug@example.com": {
+        "name": "aidan",
+        "email": "doug@example.com",
+        "password": "password123",
+        "street_address": "I dunno",
+        "games": {
+            "idk": {
+                "name": "idk",
+                "publisher": "bungie",
+                "year": "2018",
+                "platform": "PC, PS4, Xbox One",
+                "condition": "dawg shiet"
+            },
+            "dog shit 123": {
+                "name": "dog shit 123",
+                "publisher": "idk",
+                "year": "2017",
+                "platform": "PC, PS4, Xbox One",
+                "condition": "idfk"
+            },
+            "destiny 2": {
+                "name": "destiny 2",
+                "publisher": "bungie",
+                "year": "2018",
+                "platform": "PC, PS4, Xbox One",
+                "condition": "mint"
+            }
+        }
+    },
+    "aidan@example.com": {
+        "name": "I dunno bro",
+        "email": "aidan@example.com",
+        "password": "password123",
+        "street_address": "idk bro leave me alone",
+        "games": {
+            "destiny 1": {
+                "name": "destiny 1",
+                "publisher": "bungie",
+                "year": "2014",
+                "platform": "PS3, Xbox 360",
+                "condition": "mint"
+            }
+        }
+    }
+}
