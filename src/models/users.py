@@ -1,7 +1,5 @@
 import json
 
-from typing import Dict
-
 from .user import User
 from .game import Game
 
@@ -9,15 +7,15 @@ class Users:
     DB_PATH = "db/db.json"
 
     def __init__(self) -> None:
-        self.users: Dict[str, User] = {}
+        self.users: dict[str, User] = {}
         self._load_users()
 
     def _load_users(self) -> None:
         with open(self.DB_PATH, 'r') as db_handle:
-            user_json: Dict[str, dict] = json.load(db_handle)
+            user_json: dict[str, dict] = json.load(db_handle)
 
         for email, user_data in user_json.items():
-            games: Dict[str, Game] = {
+            games: dict[str, Game] = {
                 title: Game.from_dict(title, game)
                 for title, game in user_data["games"].items()
             }
@@ -31,7 +29,7 @@ class Users:
             )
 
     def _save_users(self) -> None:
-        user_data: Dict[str, dict] = {}
+        user_data: dict[str, dict] = {}
         for email, user in self.users.items():
             user_data[email] = {
                 "name"     : user.name,

@@ -1,5 +1,3 @@
-from typing import Dict
-
 from .game import Game
 
 class User:
@@ -9,13 +7,13 @@ class User:
         email: str,
         password: str,
         street_address: str,
-        games: Dict[str, Game] = {},
+        games: dict[str, Game] = {},
     ) -> None:
         self.name: str = name
         self.email: str = email
         self.password: str = password
         self.street_address: str = street_address
-        self.games: Dict[str, Game] = games
+        self.games: dict[str, Game] = games
 
     def update_user(
         self,
