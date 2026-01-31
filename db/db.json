@@ -42,5 +42,12 @@
                 "condition": "mint"
             }
         }
+    },
+    "test@example.com": {
+        "name": "aidan",
+        "email": "test@example.com",
+        "password": "test123",
+        "street_address": "123 main st",
+        "games": {}
     }
 }
