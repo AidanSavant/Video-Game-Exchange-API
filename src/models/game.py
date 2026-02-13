@@ -32,4 +32,4 @@ class Game:
             platform=str(game["platform"]),
             condition=str(game["condition"])
         )
-    
+

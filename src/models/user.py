@@ -65,3 +65,4 @@ class User:
 
     def has_game(self, name: str) -> bool:
         return name in self.games.keys()
+

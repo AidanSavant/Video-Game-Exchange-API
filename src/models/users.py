@@ -1,87 +1,73 @@
-import json
+# NOTE: [AI CITATION]: json db -> mongodb migration was mostly written by chatGPT (as I'm not familiar with mongo and need to focus on the main part of this lab)
+
+import typing
+
+from logging import Logger
 
 from .user import User
 from .game import Game
 
+from pymongo.errors import PyMongoError
+from pymongo.collection import Collection
+from pymongo import MongoClient, ReturnDocument
+
 class Users:
-    DB_PATH = "db/db.json"
+    MONGO_URI: typing.Final[str] = "mongodb://mongo:27017"
 
-    def __init__(self) -> None:
-        self.users: dict[str, User] = {}
-        self._load_users()
+    def __init__(self, logger: Logger) -> None:
+        self.logger = logger
 
-    def _load_users(self) -> None:
-        with open(self.DB_PATH, 'r') as db_handle:
-            user_json: dict[str, dict] = json.load(db_handle)
+        client: MongoClient = MongoClient(self.MONGO_URI)
 
-        for email, user_data in user_json.items():
-            games: dict[str, Game] = {
-                title: Game.from_dict(title, game)
-                for title, game in user_data["games"].items()
-            }
-
-            self.users[email] = User(
-                name=user_data["name"],
-                email=email,
-                password=user_data["password"],
-                street_address=user_data["street_address"],
-                games=games
-            )
-
-    def _save_users(self) -> None:
-        user_data: dict[str, dict] = {}
-        for email, user in self.users.items():
-            user_data[email] = {
-                "name"     : user.name,
-                "email"    : user.email,
-                "password" : user.password,
-                "street_address" : user.street_address,
-                "games" : { 
-                    title: game.to_dict()
-                    for title, game in user.games.items()
-                }
-            }
-
-        with open(self.DB_PATH, 'w') as db_handle:
-            json.dump(user_data, db_handle, indent=4)
+        self.users: Collection = client["video_game_exchange"]["users"]
 
     def add_user(self, user: User) -> None:
-        if user.email in self.users:
+        if self._find_user(user.email) is not None:
             raise ValueError(f"User '{user.email}' already exists!")
 
-        self.users[user.email] = user
-        self._save_users()
+        self._insert_user(user)
 
     def get_user(self, email: str) -> User | None:
-        return self.users.get(email)
+        user_data: dict | None = self._find_user(email)
+        if user_data is None:
+            return None
+
+        return self._dict_to_user(user_data)
 
     def update_user(
         self,
         email: str,
         name: str | None = None,
+        password: str | None = None,
         street_address: str | None = None
     ) -> None:
-        user: User | None = self.get_user(email)
-        if user is None:
-            raise ValueError("Failed to find user!")
+        update_fields: dict = {}
 
-        user.update_user(name, street_address)
-        self._save_users()
+        if name is not None:
+            update_fields["name"] = name
+
+        if password is not None:
+            update_fields["password"] = password
+
+        if street_address is not None:
+            update_fields["street_address"] = street_address
+
+        if update_fields:
+            self._update(email, update_fields)
 
     def add_game(self, email: str, game: Game) -> None:
-        user: User | None = self.get_user(email)
-        if user is None:
-            raise ValueError("Failed to find user!")
-
-        user.add_game(game)
-        self._save_users()
+        self._update(email, {f"games.{game.name}": game.to_dict()})
 
     def get_game(self, email: str, game_name: str) -> Game | None:
-        user: User | None = self.get_user(email)
-        if user is None:
-            raise ValueError("Failed to find user!")
+        user_data: dict | None = self._find_user(email)
+        if user_data is None:
+            raise ValueError(f"User '{email}' does not exist!")
 
-        return user.get_game(game_name)
+        game_data: dict | None = user_data.get("games", {}).get(game_name)
+        if game_data is None:
+            return None
+
+        return Game.from_dict(game_name, game_data)
 
     def update_game(
         self,
@@ -90,20 +76,32 @@ class Users:
         new_name: str | None = None,
         condition: str | None = None
     ) -> None:
-        user: User | None = self.get_user(email)
-        if user is None:
-            raise ValueError("Failed to find user!")
+        user_data: dict | None = self._find_user(email)
+        if user_data is None:
+            raise ValueError(f"User '{email}' does not exist!")
 
-        user.update_game(game_name, new_name, condition)
-        self._save_users()
+        game_data: dict | None = user_data.get("games", {}).get(game_name)
+        if game_data is None:
+            raise ValueError(f"Game '{game_name}' does not exist for user '{email}'!")
+
+        if condition is not None:
+            self._update(email, {f"games.{game_name}.condition": condition})
+
+        if new_name is not None:
+            self._update(email, {f"games.{game_name}": ""}, unset=True)
+
+            game_data["name"] = new_name
+            self._update(email, {f"games.{new_name}": game_data})
 
     def delete_game(self, email: str, game_name: str) -> None:
-        user: User | None = self.get_user(email)
-        if user is None:
-            raise ValueError("Failed to find user!")
+        user_data: dict | None = self._find_user(email)
+        if user_data is None:
+            raise ValueError(f"User '{email}' does not exist!")
 
-        user.delete_game(game_name)
-        self._save_users()
+        if game_name not in user_data.get("games", {}):
+            raise ValueError(f"Game '{game_name}' does not exist for user '{email}'!")
+
+        self._update(email, {f"games.{game_name}": ""}, unset=True)
 
     def exchange_games(
         self,
@@ -112,8 +110,8 @@ class Users:
         sender_game_name: str,
         receiver_game_name: str
     ) -> None:
-        sender:   User | None = self.get_user(sender_email)
-        receiver: User | None = self.get_user(receiver_email)
+        sender: dict | None = self._find_user(sender_email)
+        receiver: dict | None = self._find_user(receiver_email)
 
         if sender is None:
             raise ValueError(f"Sender '{sender_email}' does not exist!")
@@ -121,8 +119,8 @@ class Users:
         if receiver is None:
             raise ValueError(f"Receiver '{receiver_email}' does not exist!")
 
-        sender_game:   Game | None = sender.get_game(sender_game_name)
-        receiver_game: Game | None = receiver.get_game(receiver_game_name)
+        sender_game: dict | None = sender.get("games", {}).get(sender_game_name)
+        receiver_game: dict | None = receiver.get("games", {}).get(receiver_game_name)
 
         if sender_game is None:
             raise ValueError(f"Sender no longer has game '{sender_game_name}'!")
@@ -130,10 +128,61 @@ class Users:
         if receiver_game is None:
             raise ValueError(f"Receiver no longer has game '{receiver_game_name}'!")
 
-        sender.delete_game(sender_game_name)
-        receiver.delete_game(receiver_game_name)
+        self._update(sender_email, {f"games.{sender_game_name}": ""}, unset=True)
+        self._update(receiver_email, {f"games.{receiver_game_name}": ""}, unset=True)
 
-        sender.add_game(receiver_game)
-        receiver.add_game(sender_game)
+        self._update(sender_email, {f"games.{receiver_game_name}": receiver_game})
+        self._update(receiver_email, {f"games.{sender_game_name}": sender_game})
 
-        self._save_users()
+    def _find_user(self, email: str) -> dict | None:
+        try:
+            return self.users.find_one({"_id": email})
+
+        except PyMongoError as e:
+            raise RuntimeError(f"Failed to query user '{email}': {e}")
+
+    def _insert_user(self, user: User) -> None:
+        try:
+            self.users.insert_one({
+                "_id": user.email,
+                "name": user.name,
+                "email": user.email,
+                "password": user.password,
+                "street_address": user.street_address,
+                "games": {}
+            })
+
+        except PyMongoError as e:
+            raise RuntimeError(f"Failed to insert user '{user.email}'! Reason: {str(e)}")
+
+    def _update(self, email: str, fields: dict, unset: bool = False) -> dict:
+        try:
+            update_query: dict = {"$unset" : fields } if unset else {"$set" : fields}
+            prev_user_state: dict | None = self.users.find_one_and_update(
+                {"_id" : email},
+                update_query,
+                return_document=ReturnDocument.BEFORE
+            )
+
+            if prev_user_state is None:
+                raise ValueError(f"User '{email}' does not exist!")
+
+            return prev_user_state
+
+        except PyMongoError as e:
+            raise RuntimeError(f"Failed to update user '{email}': {e}")
+
+    def _dict_to_user(self, data: dict) -> User:
+        games: dict[str, Game] = {
+            title: Game.from_dict(title, g)
+            for title, g in data.get("games", {}).items()
+        }
+
+        return User(
+            name=data["name"],
+            email=data["email"],
+            password=data["password"],
+            street_address=data["street_address"],
+            games=games
+        )
+

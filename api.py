@@ -1,6 +1,7 @@
 import logging
-
 from typing import Any
+
+# === Internal models and middleware(s) imports === #
 
 from src.models.users import Users
 from src.models.user  import User, Game
@@ -10,43 +11,46 @@ from src.models.trades import Trades
 
 from src.middleware.user_auth import UserAuth
 
+from src.models.email_notif_producer import EmailNotifProducer
+
+# === FastAPI imports === #
+
 from fastapi.responses import JSONResponse
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
-# === Application initialization === #
-
-app: FastAPI = FastAPI()
-bearer: HTTPBearer = HTTPBearer()
-
-users: Users = Users()
-trades: Trades = Trades()
-auth_service: UserAuth = UserAuth(users)
+# NOTE: [AI CITATION]: Logging setup help from chatGPT / stackoverflow
+# === Logging initialization === #
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    filename="api_logs.log",
+    filename="api.logs",
     filemode='a'
 )
 
-# NOTE: Got logging setup help from chatGPT / stackoverflow
-
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
-
-file_handler = logging.FileHandler("api_logs.log", mode='a')
-file_handler.setLevel(logging.INFO)
 
 console_handler = logging.StreamHandler()
 console_handler.setLevel(logging.INFO)
 
 formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
-file_handler.setFormatter(formatter)
 console_handler.setFormatter(formatter)
 
-logger.addHandler(file_handler)
 logger.addHandler(console_handler)
+
+# === Application initialization setup === #
+
+app: FastAPI = FastAPI()
+bearer: HTTPBearer = HTTPBearer()
+
+trades: Trades = Trades()
+users: Users = Users(logger)
+
+auth_service: UserAuth = UserAuth(users)
+
+email_notif_producer: EmailNotifProducer = EmailNotifProducer(users, trades)
 
 # === Authentication === #
 
@@ -71,7 +75,7 @@ def auth_middleware(
         raise HTTPException(status_code=401, detail="Failed to auth user! Invalid JWT!")
 
 # === User API === #
-# NOTE: Partially generated with claude code
+# NOTE: [AI CITATION] Partially generated with claude code
 
 def _new_hateos_link(*link_info: tuple[str, str, str]) -> dict[str, dict[str, str]]:
     return {
@@ -97,14 +101,15 @@ def register(reg_body: dict[str, str]) -> JSONResponse:
         )
 
         users.add_user(user)
+        user_email: str = user.email
 
-        logging.info(f"User '{user.email}' successfully registered!")
+        logging.info(f"User '{user_email}' successfully registered!")
 
         return JSONResponse(
+            status_code=201,
             content={
                 "links": _new_hateos_link(("login", "/api/login", "POST"))
             },
-            status_code=201
         )
 
     except KeyError as e:
@@ -114,22 +119,23 @@ def register(reg_body: dict[str, str]) -> JSONResponse:
         )
 
     except ValueError as e:
-        logging.error(f"User '{user.email}' failed to register! Reason: {str(e)}")
+        logging.error(f"User '{user_email}' failed to register! Reason: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.post("/api/login")
 def login(user: dict[str, str]) -> JSONResponse:
+    # NOTE: Would definitely be better to have setting auth token in the cookies directly
+
     try:
         jwt: str = auth_service.auth(user["email"], user["password"])
-
         logging.info(f"User '{user['email']}' successfully logged in!")
 
         return JSONResponse(
+            status_code=201,
             content={
                 "jwt" : jwt,
                 "links": _new_hateos_link(("get_self", "/api/self", "GET"))
             },
-            status_code=201
         )
 
     except KeyError as e:
@@ -147,6 +153,7 @@ def get_self(authed_user: User = Depends(auth_middleware)) -> dict[str, str | di
     return {
         "name": authed_user.name,
         "email": authed_user.email,
+        "password" : authed_user.password,
         "street_address": authed_user.street_address,
         "games" : {
             name: game.to_dict()
@@ -157,27 +164,43 @@ def get_self(authed_user: User = Depends(auth_middleware)) -> dict[str, str | di
 
 @app.put("/api/self")
 def update_self(
-    update_body: dict[str, str], 
-    user: User = Depends(auth_middleware)
+    update_body: dict[str, str],
+    authed_user: User = Depends(auth_middleware)
 ) -> JSONResponse:
     try:
+        email: str = authed_user.email
+
+        old_name: str = authed_user.name
+        old_password: str = authed_user.password
+
+        new_name: str | None = update_body.get("name")
+        new_password: str | None = update_body.get("password")
+        new_street_address: str | None = update_body.get("street_address")
+
         users.update_user(
-            email=user.email,
-            name=update_body.get("name"),
-            street_address=update_body.get("street_address")
+            email=email,
+            name=new_name,
+            password=new_password,
+            street_address=new_street_address
         )
 
-        logging.info(f"Successfully updated user '{user.email}'!")
+        if new_password is not None:
+            email_notif_producer.send_pw_update_notif(
+                name=old_name,
+                auth_combo=(email, old_password)
+            )
+
+        logging.info(f"Successfully updated user '{email}'!")
 
         return JSONResponse(
+            status_code=200,
             content={
                 "links": _new_hateos_link(("read_self", "/api/self", "GET"))
             },
-            status_code=200
         )
 
     except ValueError as e:
-        logging.error(f"Failed to update user '{user.email}'! Reason: {str(e)}")
+        logging.error(f"Failed to update user '{email}'! Reason: {str(e)}")
         raise HTTPException(status_code=404, detail=str(e))
 
 # === Game API === #
@@ -196,15 +219,16 @@ def add_game(
             condition=str(game_body["condition"])
         )
 
-        users.add_game(authed_user.email, game)
+        email: str = authed_user.email
+        users.add_game(email, game)
 
-        logging.info(f"Successfully added game '{game.name}' to user '{authed_user.email}'s games!")
+        logging.info(f"Successfully added game '{game.name}' to user '{email}'s games!")
 
         return JSONResponse(
+            status_code=201,
             content={
                 "links": _new_hateos_link(("get_game", "/api/games/{game_name}", "GET"))
             },
-            status_code=201
         )
 
     except KeyError as e:
@@ -250,20 +274,19 @@ def update_game(
             condition=update_body.get("condition")
         )
         return JSONResponse(
+            status_code=200,
             content={
                 "links": _new_hateos_link(("get_game", "/api/games/{game_name}", "GET"))
             },
-            status_code=200
         )
-    
+
     except ValueError as e:
         logger.error(f"Failed to update game for user '{authed_user.email}'! Reason: {str(e)}")
         raise HTTPException(status_code=404, detail=str(e))
 
-
 @app.delete("/api/games/{game_name}")
 def delete_game(
-    game_name: str, 
+    game_name: str,
     authed_user: User = Depends(auth_middleware)
 ) -> JSONResponse:
     try:
@@ -271,72 +294,73 @@ def delete_game(
         logging.info(f"Successfully deleted game '{game_name}' from user '{authed_user.email}'s games!")
 
         return JSONResponse(
+            status_code=200,
             content={
                 "links": _new_hateos_link(("get_game", "/api/games/{game_name}", "GET"))
             },
-            status_code=200
         )
 
     except ValueError as e:
         logger.error(f"Failed to delete game '{game_name}' for user '{authed_user.email}'! Reason: {str(e)}")
         raise HTTPException(status_code=404, detail=str(e))
 
-
 @app.post("/api/trades")
-def trade_game(
+def init_trade_offer(
     trade_body: dict[str, str],
     authed_user: User = Depends(auth_middleware)
 ) -> JSONResponse:
-    def _validate_request_body(
-        sender: User, 
-        receiver: str, 
-        offered_game: str, 
+    def _validate_trade_body(
+        sender: User,
+        receiver_email: str,
+        offered_game: str,
         requested_game: str
     ) -> None:
-        receiver_user: User | None = users.get_user(receiver)
-        if receiver_user is None:
+        receiver: User | None = users.get_user(receiver_email)
+        if receiver is None:
             raise ValueError(f"Receiver '{receiver}' does not exist!")
 
-        if receiver_user.get_game(requested_game) is None:
+        if receiver.get_game(requested_game) is None:
             raise ValueError(f"User '{receiver}' does not have requested game '{requested_game}'!")
-        
+
         if sender.get_game(offered_game) is None:
             raise ValueError(f"User '{sender.email}' does not have offered game '{offered_game}'!")
-        
+
         if receiver == sender.email:
             raise ValueError("Cannot trade games with yourself!")
-        
+
         if offered_game == requested_game:
             raise ValueError("Offered game and requested game cannot be the same!")
 
     try:
-        sender: str = authed_user.email
-        receiver: str = trade_body["receiver"]
+        sender_email: str = authed_user.email
+        receiver_email: str = trade_body["receiver"]
 
         offered_game: str = trade_body["offered_game"]
         requested_game: str = trade_body["requested_game"]
 
-        _validate_request_body(authed_user, receiver, offered_game, requested_game)
+        _validate_trade_body(authed_user, receiver_email, offered_game, requested_game)
 
         trade: Trade = Trade(
-            sender=sender,
-            receiver=receiver,
+            sender_email=sender_email,
+            receiver_email=receiver_email,
             offered_game=offered_game,
             requested_game=requested_game,
         )
 
-        trades.add_trade(trade)
-        logger.info(f"Trade request from {sender} to {receiver} successfully created!")
+        trade_id: str = trades.add_trade(trade)
+        email_notif_producer.send_trade_offer_notif(trade_id=trade_id)
+
+        logger.info(f"Trade request from {sender_email} to {receiver_email} successfully created!")
 
         return JSONResponse(
+            status_code=201,
             content={
-                "trade_id" : trade.id,
+                "trade_id" : trade_id,
                 "links": _new_hateos_link(
                     ("accept_trade", "/api/trades/accept/{trade_id}", "POST"),
                     ("reject_trade", "/api/trades/reject/{trade_id}", "POST")
                 )
             },
-            status_code=201
         )
 
     except KeyError as e:
@@ -346,7 +370,7 @@ def trade_game(
         )
 
     except ValueError as e:
-        logger.error(f"Failed to initiate request between {sender} and {receiver}! Reason: {str(e)}")
+        logger.error(f"Failed to initiate request between {sender_email} and {receiver_email}! Reason: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.get("/api/trades")
@@ -354,34 +378,37 @@ def get_trades(
     authed_user: User = Depends(auth_middleware)
 ) -> JSONResponse:
     return JSONResponse(
+        status_code=200,
         content={
             "trades": trades.get_trades_for(authed_user.email),
             "links": _new_hateos_link(("get_self", "/api/self", "GET"))
         },
-        status_code=200
     )
 
 @app.post("/api/trades/accept/{trade_id}")
-def accept_trade(
+def accept_trade_offer(
     trade_id: str,
     authed_user: User = Depends(auth_middleware)
 ) -> JSONResponse:
     try:
-        trade = trades.get_trade(trade_id)
+        trade: Trade | None = trades.get_trade(trade_id)
         if trade is None:
             raise Exception("Trade does not exist!")
-        
-        if trade.receiver != authed_user.email:
+
+        email: str = authed_user.email
+        if trade.receiver_email != email:
             raise Exception("User is not authorized to accept this trade!")
-        
+
         trades.accept_trade(trade_id, users)
-        logger.info(f"User '{authed_user.email}' successfully accepted trade '{trade_id}'!")
+        email_notif_producer.send_trade_accepted_notif(trade_id=trade_id)
+
+        logger.info(f"User '{email}' successfully accepted trade '{trade_id}'!")
 
         return JSONResponse(
+            status_code=200,
             content={
                 "links": _new_hateos_link(("get_self", "/api/self", "GET"))
             },
-            status_code=200
         )
 
     except ValueError as e:
@@ -389,28 +416,33 @@ def accept_trade(
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.post("/api/trades/reject/{trade_id}")
-def reject_trade(
+def reject_trade_offer(
     trade_id: str,
     authed_user: User = Depends(auth_middleware)
-)-> JSONResponse:
+) -> JSONResponse:
     try:
-        trade = trades.get_trade(trade_id)
+        trade: Trade | None = trades.get_trade(trade_id)
         if trade is None:
             raise ValueError("Trade does not exist!")
-        
-        if trade.receiver != authed_user.email:
+
+        email: str = authed_user.email
+        if trade.receiver_email != email:
             raise ValueError("User is not authorized to reject this trade!")
-        
+
         trades.reject_trade(trade_id)
-        logging.info(f"User '{authed_user.email}' successfully rejected trade '{trade_id}'!")
+
+        email_notif_producer.send_trade_rejected_notif(trade_id=trade_id)
+
+        logging.info(f"User '{email}' successfully rejected trade '{trade_id}'!")
 
         return JSONResponse(
+            status_code=200,
             content={
                 "links": _new_hateos_link(("get_self", "/api/self", "GET"))
             },
-            status_code=200
         )
 
     except ValueError as e:
         logger.error(f"Failed to reject trade for user '{authed_user.email}'! Reason: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
+

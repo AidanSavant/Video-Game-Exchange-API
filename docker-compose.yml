@@ -2,15 +2,79 @@ services:
   api1:
     build: .
     container_name: api1
+    
+    depends_on:
+      mongo:
+        condition: service_started
+        
+      kafka: 
+        condition: service_healthy
 
   api2:
     build: .
     container_name: api2
+    
+    depends_on:
+      mongo:
+        condition: service_started
 
+      kafka:
+        condition: service_healthy
+      
+  mongo:
+    image: mongo:latest
+
+    # NOTE: Not necessary, but I plan on testing with compass
+    ports:
+      - "27017:27017"
+
+    # NOTE: Necessary for persisting data past container lifetime cycle
+    volumes:
+      - mongodb-data:/data/db
+
+  email-service:
+    build: ./email-service
+    container_name: email-service
+        
+    depends_on:
+      kafka:
+        condition: service_healthy
+        
   nginx:
     build: ./nginx
+    
     ports:
       - "8080:80"
+    
     depends_on:
       - api1
       - api2
+
+  kafka:
+    image: apache/kafka:latest
+    container_name: kafka
+    
+    ports:
+      - "9092:9092"
+    
+    environment:
+      KAFKA_LISTENERS: HOST://0.0.0.0:9092,CONTROLLER://localhost:9091
+      KAFKA_ADVERTISED_LISTENERS: HOST://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: HOST:PLAINTEXT,CONTROLLER:PLAINTEXT
+
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLEs: broker,controller
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9091
+
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_INTER_BROKER_LISTENER_NAME: HOST
+
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "9092"]
+      interval: 5s
+      retries: 10
+      
+volumes:
+  mongodb-data:
+  
