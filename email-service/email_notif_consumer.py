@@ -19,7 +19,7 @@ class EmailNotifConsumer:
             self.TOPIC,
             bootstrap_servers=self.BOOTSTRAP_SERVERS,
             value_deserializer=lambda msg: json.loads(msg.decode("utf-8")),
-            auto_offset_reset="earliest",
+            auto_offset_reset="latest",
             group_id="email-notif-stream"
         )
 
@@ -31,15 +31,17 @@ class EmailNotifConsumer:
         }
 
     def start_consuming_notifs(self) -> None:
-        try:
-            for notif in self.consumer:
-                self._handle_notif(notif.value)
+        while True:
+            try:
+                for notif in self.consumer:
+                    self._handle_notif(notif.value)
+                    self.consumer.commit()
 
-        except KafkaError as e:
-            raise ValueError(f"Failed to start consuming due to a kafka error! Reason: {str(e)}")
+            except KafkaError as e:
+                raise ValueError(f"Failed to start consuming due to a kafka error! Reason: {str(e)}")
 
-        except Exception as e:
-            raise ValueError(f"Failed to start consuming due to an unexpected error! Reason: {str(e)}")
+            except Exception as e:
+                raise ValueError(f"Failed to start consuming due to an unexpected error! Reason: {str(e)}")
 
     def _handle_notif(self, notif: dict) -> None:
         notif_type = notif.get("type")

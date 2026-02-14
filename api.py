@@ -19,9 +19,9 @@ from fastapi.responses import JSONResponse
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
-# NOTE: [AI CITATION]: Logging setup help from chatGPT / stackoverflow
 # === Logging initialization === #
 
+# NOTE: [AI CITATION]: Logging setup help from chatGPT / stackoverflow
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -45,7 +45,7 @@ logger.addHandler(console_handler)
 app: FastAPI = FastAPI()
 bearer: HTTPBearer = HTTPBearer()
 
-trades: Trades = Trades()
+trades: Trades = Trades(logger)
 users: Users = Users(logger)
 
 auth_service: UserAuth = UserAuth(users)

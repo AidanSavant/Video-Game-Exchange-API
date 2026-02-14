@@ -115,7 +115,7 @@ class Emailer:
 
         self._send_notif_email(
             email=sender_email,
-            password=sender_email,
+            password=sender_password,
             subject="Trade offer accepted",
             body=sender_body
         )
@@ -145,20 +145,20 @@ class Emailer:
 
         sender_body: str = (
             f"Hello, {sender_name}!\n"
-            f"Your trade offer of '{offered_game}' for '{requested_game}' from ''{receiver_name}/{receiver_email}'' was unfortunately rejected :(!\n"
+            f"Your trade offer of '{offered_game}' for '{requested_game}' from '{receiver_name}/{receiver_email}' was unfortunately rejected :(!\n"
             "Sincerely, yep yep yep\n"
         )
 
         self._send_notif_email(
             email=sender_email,
-            password=sender_email,
+            password=sender_password,
             subject="Trade offer rejected :(",
             body=sender_body
         )
 
         receiver_body: str = (
             f"Hello, {receiver_name}!\n"
-            f"The trade offer of '{requested_game}' for '{offered_game}' from '{sender_name}/{sender_email}' was unfortunatelyr rejected!\n"
+            f"The trade offer of '{requested_game}' for '{offered_game}' from '{sender_name}/{sender_email}' was unfortunately rejected!\n"
             "Sincerely, yep yep yep\n"
         )
 
