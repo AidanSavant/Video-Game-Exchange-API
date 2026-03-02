@@ -1,7 +1,5 @@
 # Video-Game-Exchange-API
-A distributed RMM3-level API for managing your account and games, along with the ability to exchange with other users. This multi-node system leverages nginx as a reverse proxy/load balancer. 
+A distributed system for managing video games and user profiles.
 
-# Important
-* There is no consistency between each replica's "database" (server 1 isn't going to have server 2's database after building)
-* and probably some other stuff
-* probably bad code
+# Services used (and why)
+...
