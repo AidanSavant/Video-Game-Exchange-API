@@ -1,20 +1,35 @@
+import json
 import typing
 from logging import Logger
 from pymongo.errors import PyMongoError
 from pymongo.collection import Collection
 from pymongo import MongoClient, ReturnDocument
 
+import redis
+
 from .users import Users
 from .trade import Trade, TradeStatus
 
+# NOTE: [AI CITATION] Redis caching layer was implemented with help from Claude Code
 class Trades:
     MONGO_URI: typing.Final[str] = "mongodb://mongo:27017"
+    REDIS_HOST: typing.Final[str] = "redis"
+    CACHE_TTL: typing.Final[int] = 120
 
     def __init__(self, logger: Logger) -> None:
         self.logger = logger
 
         client: MongoClient = MongoClient(self.MONGO_URI)
         self.trades: Collection = client["video_game_exchange"]["trades"]
+
+        self.cache: redis.Redis = redis.Redis(host=self.REDIS_HOST, port=6379, decode_responses=True)
+
+    def _trades_cache_key(self, email: str) -> str:
+        return f"trades:{email}"
+
+    def _invalidate_trades_cache(self, sender_email: str, receiver_email: str) -> None:
+        self.cache.delete(self._trades_cache_key(sender_email))
+        self.cache.delete(self._trades_cache_key(receiver_email))
 
     def add_trade(self, trade: Trade) -> str:
         try:
@@ -26,6 +41,7 @@ class Trades:
                 "requested_game": trade.requested_game,
                 "status": trade.status.name
             })
+            self._invalidate_trades_cache(trade.sender_email, trade.receiver_email)
             return trade.id
         except PyMongoError as e:
             raise RuntimeError(f"Failed to insert trade '{trade.id}': {e}")
@@ -52,6 +68,7 @@ class Trades:
         )
 
         self._update_trade_status(trade_id, TradeStatus.ACCEPTED)
+        self._invalidate_trades_cache(trade.sender_email, trade.receiver_email)
 
     def reject_trade(self, trade_id: str) -> None:
         trade = self.get_trade(trade_id)
@@ -62,6 +79,7 @@ class Trades:
             raise ValueError(f"Trade '{trade_id}' is not pending!")
 
         self._update_trade_status(trade_id, TradeStatus.REJECTED)
+        self._invalidate_trades_cache(trade.sender_email, trade.receiver_email)
 
     def _get_incoming_for(self, email: str) -> list[Trade]:
         cursor = self.trades.find({"receiver_email": email})
@@ -72,10 +90,27 @@ class Trades:
         return [self._dict_to_trade(doc) for doc in cursor]
 
     def get_trades_for(self, email: str) -> dict[str, list[dict]]:
-        return {
+        cache_key: str = self._trades_cache_key(email)
+        try:
+            cached: str | None = self.cache.get(cache_key)
+            if cached is not None:
+                self.logger.info(f"Cache HIT for trades of '{email}'")
+                return json.loads(cached)
+        except redis.RedisError:
+            self.logger.warning(f"Redis unavailable, falling back to MongoDB for trades of '{email}'")
+
+        result: dict = {
             "incoming": [trade.to_dict() for trade in self._get_incoming_for(email)],
             "outgoing": [trade.to_dict() for trade in self._get_outgoing_for(email)]
         }
+
+        try:
+            self.cache.setex(cache_key, self.CACHE_TTL, json.dumps(result))
+            self.logger.info(f"Cache MISS for trades of '{email}', cached result")
+        except redis.RedisError:
+            self.logger.warning(f"Failed to cache trades for '{email}'")
+
+        return result
 
     def _find_trade(self, trade_id: str) -> dict | None:
         try:

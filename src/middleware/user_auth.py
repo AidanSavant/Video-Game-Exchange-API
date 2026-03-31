@@ -1,12 +1,13 @@
 import jwt
 
-from src.models.user import User
-from src.models.users import Users
+from models.user import User
+from models.users import Users
 
 from typing import Any
 from datetime import datetime, timedelta
 
 class UserAuth:
+    # NOTE: Obviously bad, just hardcoding in the src for simplicity
     SECRET_KEY = "secret_jwt_key123321!"
 
     def __init__(self, users: Users) -> None:
@@ -46,3 +47,4 @@ class UserAuth:
 
     def verify_jwt(self, token: str) -> dict[str, Any]:
         return jwt.decode(token, self.SECRET_KEY, algorithms=["HS256"])
+    

@@ -6,7 +6,5 @@ COPY . .
 
 RUN pip3 install kafka-python
 
-EXPOSE 9092
-
 CMD ["python3", "main.py"]
 

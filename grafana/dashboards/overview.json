@@ -1,0 +1,83 @@
+{
+  "uid": "vge-overview",
+  "title": "Video Game Exchange — Overview",
+  "refresh": "10s",
+  "time": { "from": "now-30m", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "title": "API p95 Latency by Endpoint",
+      "description": "95th percentile request duration per endpoint across both API nodes. A spike here means most users are seeing slow responses.",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 0, "w": 24, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus-main" },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(api_request_latency_s_bucket[$__rate_interval])) by (le, endpoint))",
+          "legendFormat": "p95 — {{ endpoint }}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": { "lineWidth": 2, "fillOpacity": 8 },
+          "thresholds": {
+            "steps": [
+              { "value": null, "color": "green"  },
+              { "value": 0.25, "color": "yellow" },
+              { "value": 0.5,  "color": "red"    }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 2,
+      "title": "Kafka — Email Notification Consumer Lag",
+      "description": "How far behind the email-service consumer is on the email-notifs topic. Should stay near 0.",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus-main" },
+      "targets": [
+        {
+          "expr": "sum(kafka_consumergroup_lag{topic=\"email-notifs\"}) by (consumergroup)",
+          "legendFormat": "{{ consumergroup }}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": { "lineWidth": 2, "fillOpacity": 8 },
+          "thresholds": {
+            "steps": [
+              { "value": null, "color": "green"  },
+              { "value": 100,  "color": "yellow" },
+              { "value": 500,  "color": "red"    }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 3,
+      "title": "MongoDB — Resident Memory",
+      "description": "Actual RAM MongoDB is using for its working set. If this climbs toward your host RAM limit, query performance will degrade.",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus-main" },
+      "targets": [
+        {
+          "expr": "mongodb_ss_mem_resident * 1024 * 1024",
+          "legendFormat": "Resident Memory"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": { "lineWidth": 2, "fillOpacity": 8 }
+        }
+      }
+    }
+  ],
+  "schemaVersion": 39
+}

@@ -2,9 +2,9 @@
 
 import typing
 import smtplib
+import threading
 
 from logging import Logger
-
 from email.message import EmailMessage
 from ssl import SSLContext, create_default_context
 
@@ -23,19 +23,25 @@ class Emailer:
         subject: str,
         body: str
     ) -> None:
-        notif_msg: EmailMessage = EmailMessage()
-        notif_msg["From"] = email
-        notif_msg["To"]   = email
-        notif_msg["Subject"] = subject
-        notif_msg.set_content(body)
+        def _internal_send() -> None:
+            notif_msg: EmailMessage = EmailMessage()
+            notif_msg["From"]    = "noreply@email-service.com"
+            notif_msg["To"]      = email
+            notif_msg["Subject"] = subject
+            notif_msg.set_content(body)
 
-        with smtplib.SMTP(
-            self.ETHEREAL_SMTP_SERVER,
-            self.ETHEREAL_SMTP_STARTTLS_PORT
-        ) as smtp_server:
-            smtp_server.starttls(context=self.ssl_ctx)
-            smtp_server.login(email, password)
-            smtp_server.send_message(notif_msg)
+            with smtplib.SMTP(
+                self.ETHEREAL_SMTP_SERVER,
+                self.ETHEREAL_SMTP_STARTTLS_PORT,
+                timeout=15
+            ) as smtp_server:
+                smtp_server.starttls(context=self.ssl_ctx)
+                smtp_server.login(email, password)
+                smtp_server.send_message(notif_msg)
+
+        email_thread = threading.Thread(target=_internal_send)
+        email_thread.start()
+        email_thread.join(timeout=15)
 
     def send_pw_update(
         self,
@@ -72,7 +78,7 @@ class Emailer:
             f"Hello, {sender_name}!\n"
             f"We have received your trade offer of {offered_game} for {requested_game} from {receiver_name} | {receiver_email}!\n"
             f"The trade ID of your trade offer is {trade_id}!\n"
-            "Sincerely, I'm fucking tired of this bullshit\n"
+            "Sincerely, ok\n"
         )
 
         self._send_notif_email(
@@ -86,7 +92,7 @@ class Emailer:
             f"Hello, {receiver_name}!\n"
             f"You have received a trade offer from '{sender_name}/{sender_email}'!\n"
             f"They have offered '{offered_game}' for '{requested_game}'!\n"
-            f"Use this trade ID: '{trade_id}' to accept/reject the offer!\n"
+            f"Use this trade ID: '/api/trades/accept/{trade_id}' or '/api/trades/reject/{trade_id}' to accept/reject the offer!\n"
             "Sincerely, yeah whatever"
         )
 

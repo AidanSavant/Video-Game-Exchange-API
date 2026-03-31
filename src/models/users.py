@@ -1,5 +1,7 @@
 # NOTE: [AI CITATION]: json db -> mongodb migration was mostly written by chatGPT (as I'm not familiar with mongo and need to focus on the main part of this lab)
+# NOTE: [AI CITATION] Redis caching layer was implemented with help from Claude Code
 
+import json
 import typing
 
 from logging import Logger
@@ -7,19 +9,25 @@ from logging import Logger
 from .user import User
 from .game import Game
 
+import redis
+
 from pymongo.errors import PyMongoError
 from pymongo.collection import Collection
 from pymongo import MongoClient, ReturnDocument
 
 class Users:
     MONGO_URI: typing.Final[str] = "mongodb://mongo:27017"
+    REDIS_HOST: typing.Final[str] = "redis"
+    CACHE_TTL: typing.Final[int] = 300
 
     def __init__(self, logger: Logger) -> None:
         self.logger = logger
 
         client: MongoClient = MongoClient(self.MONGO_URI)
-
         self.users: Collection = client["video_game_exchange"]["users"]
+
+        self.cache: redis.Redis = redis.Redis(host=self.REDIS_HOST, port=6379, decode_responses=True)
+        self.logger.info("Connected to Redis cache")
 
     def add_user(self, user: User) -> None:
         if self._find_user(user.email) is not None:
@@ -27,10 +35,33 @@ class Users:
 
         self._insert_user(user)
 
+    def _cache_key(self, email: str) -> str:
+        return f"user:{email}"
+
+    def _invalidate_cache(self, email: str) -> None:
+        self.cache.delete(self._cache_key(email))
+
     def get_user(self, email: str) -> User | None:
+        cache_key: str = self._cache_key(email)
+        try:
+            cached: str | None = self.cache.get(cache_key)
+            if cached is not None:
+                self.logger.info(f"Cache HIT for user '{email}'")
+                return self._dict_to_user(json.loads(cached))
+        except redis.RedisError:
+            self.logger.warning(f"Redis unavailable, falling back to MongoDB for user '{email}'")
+
         user_data: dict | None = self._find_user(email)
         if user_data is None:
             return None
+
+        try:
+            cacheable: dict = {k: v for k, v in user_data.items() if k != "_id"}
+            cacheable["email"] = email
+            self.cache.setex(cache_key, self.CACHE_TTL, json.dumps(cacheable))
+            self.logger.info(f"Cache MISS for user '{email}', cached result")
+        except redis.RedisError:
+            self.logger.warning(f"Failed to cache user '{email}'")
 
         return self._dict_to_user(user_data)
 
@@ -54,9 +85,11 @@ class Users:
 
         if update_fields:
             self._update(email, update_fields)
+            self._invalidate_cache(email)
 
     def add_game(self, email: str, game: Game) -> None:
         self._update(email, {f"games.{game.name}": game.to_dict()})
+        self._invalidate_cache(email)
 
     def get_game(self, email: str, game_name: str) -> Game | None:
         user_data: dict | None = self._find_user(email)
@@ -93,6 +126,8 @@ class Users:
             game_data["name"] = new_name
             self._update(email, {f"games.{new_name}": game_data})
 
+        self._invalidate_cache(email)
+
     def delete_game(self, email: str, game_name: str) -> None:
         user_data: dict | None = self._find_user(email)
         if user_data is None:
@@ -102,6 +137,7 @@ class Users:
             raise ValueError(f"Game '{game_name}' does not exist for user '{email}'!")
 
         self._update(email, {f"games.{game_name}": ""}, unset=True)
+        self._invalidate_cache(email)
 
     def exchange_games(
         self,
@@ -133,6 +169,9 @@ class Users:
 
         self._update(sender_email, {f"games.{receiver_game_name}": receiver_game})
         self._update(receiver_email, {f"games.{sender_game_name}": sender_game})
+
+        self._invalidate_cache(sender_email)
+        self._invalidate_cache(receiver_email)
 
     def _find_user(self, email: str) -> dict | None:
         try:

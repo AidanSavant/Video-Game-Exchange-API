@@ -38,10 +38,12 @@ class EmailNotifConsumer:
                     self.consumer.commit()
 
             except KafkaError as e:
-                raise ValueError(f"Failed to start consuming due to a kafka error! Reason: {str(e)}")
+                self.logger.error(f"Failed to start consuming due to a kafka error! Reason: {str(e)}")
+                continue
 
             except Exception as e:
-                raise ValueError(f"Failed to start consuming due to an unexpected error! Reason: {str(e)}")
+                self.logger.error(f"Failed to start consuming due to an unexpected error! Reason: {str(e)}")
+                continue
 
     def _handle_notif(self, notif: dict) -> None:
         notif_type = notif.get("type")

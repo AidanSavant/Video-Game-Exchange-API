@@ -4,7 +4,7 @@ WORKDIR /app
 
 COPY . .
 
-RUN pip3 install uvicorn[standard] fastapi pyjwt kafka-python pymongo
+RUN pip3 install uvicorn[standard] fastapi pyjwt kafka-python pymongo prometheus_client redis
 
 EXPOSE 8000
 
